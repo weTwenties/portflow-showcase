@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 
 import { isAppError } from "@/lib/api/app-error";
+import { getServerEnv } from "@/lib/env/server";
 import { requireAdmin } from "@/modules/access/application/require-admin";
 
 import { AdminApp } from "./_components/admin-app";
+import { AdminLoginForm } from "./_components/admin-login-form";
 import { AdminProviders } from "./_components/admin-providers";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +32,8 @@ type AdminPageProps = {
 };
 
 export default async function AdminPage({ searchParams }: AdminPageProps) {
+  const env = getServerEnv();
+
   try {
     await requireAdmin();
   } catch (error) {
@@ -38,6 +42,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     // surface through the normal error boundary instead of being
     // misreported as an auth failure.
     if (isAppError(error)) {
+      if (
+        env.ADMIN_AUTH_MODE === "password" &&
+        error.code === "UNAUTHENTICATED"
+      ) {
+        return <AdminLoginForm />;
+      }
       return <AccessDenied />;
     }
     throw error;
@@ -54,6 +64,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       <AdminApp
         initialProjectId={projectParam ?? null}
         initialPage={pageParam === "home" ? "home" : null}
+        showLogout={env.ADMIN_AUTH_MODE === "password"}
       />
     </AdminProviders>
   );

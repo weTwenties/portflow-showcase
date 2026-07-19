@@ -21,14 +21,17 @@ import {
 export function AdminApp({
   initialProjectId,
   initialPage,
+  showLogout = false,
 }: {
   initialProjectId: string | null;
   initialPage: "home" | null;
+  showLogout?: boolean;
 }) {
   const router = useRouter();
   const [content, setContent] = useState<AdminContentResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const selectedProjectId = useAdminUiStore((state) => state.selectedProjectId);
   const selectProject = useAdminUiStore((state) => state.selectProject);
   const isEditingHomepage = useAdminUiStore((state) => state.isEditingHomepage);
@@ -103,6 +106,19 @@ export function AdminApp({
     }
   }
 
+  async function handleLogout() {
+    setIsLoggingOut(true);
+    try {
+      await apiFetch<{ ok: true }>("/api/admin/logout", { method: "POST" });
+      // Hard navigate so the login form appears immediately; soft
+      // router.refresh() can hang on a slow RSC refetch.
+      window.location.assign("/admin");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Logout failed");
+      setIsLoggingOut(false);
+    }
+  }
+
   if (selectedProjectId) {
     return (
       <ProjectCanvas
@@ -153,9 +169,21 @@ export function AdminApp({
             the right.
           </p>
         </div>
-        <Button type="button" onClick={() => setEditingHomepage(true)}>
-          Edit homepage
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {showLogout ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleLogout()}
+              disabled={isLoggingOut}
+            >
+              {isLoggingOut ? "Signing out…" : "Sign out"}
+            </Button>
+          ) : null}
+          <Button type="button" onClick={() => setEditingHomepage(true)}>
+            Edit homepage
+          </Button>
+        </div>
       </header>
 
       <StatusBar

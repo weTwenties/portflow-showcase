@@ -8,6 +8,7 @@ function validEnv(): Record<string, string> {
     NEXT_PUBLIC_APP_URL: "http://localhost:3000",
     APP_ENV: "development",
     ADMIN_EMAIL: "owner@example.com",
+    ADMIN_AUTH_MODE: "cloudflare_access",
     CF_ACCESS_TEAM_DOMAIN: "team-name.cloudflareaccess.com",
     CF_ACCESS_AUDS: "aud-admin-page,aud-admin-api",
     DEV_ADMIN_BYPASS: "false",
@@ -21,6 +22,17 @@ function validEnv(): Record<string, string> {
   };
 }
 
+function validPasswordEnv(): Record<string, string> {
+  return {
+    ...validEnv(),
+    ADMIN_AUTH_MODE: "password",
+    CF_ACCESS_TEAM_DOMAIN: "",
+    CF_ACCESS_AUDS: "",
+    ADMIN_USERNAME: "admin",
+    ADMIN_PASSWORD: "password123",
+  };
+}
+
 describe("parseServerEnv", () => {
   it("parses a valid environment", () => {
     const env = parseServerEnv(validEnv());
@@ -28,6 +40,14 @@ describe("parseServerEnv", () => {
     expect(env.ADMIN_EMAIL).toBe("owner@example.com");
     expect(env.APP_ENV).toBe("development");
     expect(env.DEV_ADMIN_BYPASS).toBe(false);
+    expect(env.ADMIN_AUTH_MODE).toBe("cloudflare_access");
+  });
+
+  it("defaults ADMIN_AUTH_MODE to cloudflare_access", () => {
+    const source = validEnv();
+    delete source.ADMIN_AUTH_MODE;
+    const env = parseServerEnv(source);
+    expect(env.ADMIN_AUTH_MODE).toBe("cloudflare_access");
   });
 
   it("normalizes ADMIN_EMAIL with trim and lowercase", () => {
@@ -48,9 +68,34 @@ describe("parseServerEnv", () => {
     expect(env.CF_ACCESS_AUDS).toEqual(new Set(["aud-one", "aud-two"]));
   });
 
-  it("rejects an empty CF_ACCESS_AUDS", () => {
+  it("rejects an empty CF_ACCESS_AUDS in cloudflare_access mode", () => {
     expect(() =>
       parseServerEnv({ ...validEnv(), CF_ACCESS_AUDS: " , " }),
+    ).toThrowError(EnvValidationError);
+  });
+
+  it("allows empty CF_ACCESS_* when ADMIN_AUTH_MODE=password", () => {
+    const env = parseServerEnv(validPasswordEnv());
+    expect(env.ADMIN_AUTH_MODE).toBe("password");
+    expect(env.ADMIN_USERNAME).toBe("admin");
+    expect(env.CF_ACCESS_AUDS.size).toBe(0);
+  });
+
+  it("rejects password mode without ADMIN_USERNAME", () => {
+    expect(() =>
+      parseServerEnv({ ...validPasswordEnv(), ADMIN_USERNAME: "" }),
+    ).toThrowError(EnvValidationError);
+  });
+
+  it("rejects password mode with a short ADMIN_PASSWORD", () => {
+    expect(() =>
+      parseServerEnv({ ...validPasswordEnv(), ADMIN_PASSWORD: "short" }),
+    ).toThrowError(EnvValidationError);
+  });
+
+  it("rejects an invalid ADMIN_AUTH_MODE", () => {
+    expect(() =>
+      parseServerEnv({ ...validEnv(), ADMIN_AUTH_MODE: "oauth" }),
     ).toThrowError(EnvValidationError);
   });
 

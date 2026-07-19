@@ -27,11 +27,13 @@ pnpm dev
 
 `.env.local` hiện có sẵn placeholder — cần cập nhật trước khi upload/publish hoạt động:
 
-- `ADMIN_EMAIL` — email admin duy nhất được phép.
-- `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUDS` — từ Cloudflare Zero Trust (hai Access applications cho `/admin*` và `/api/admin*`, lấy Audience tags, phân tách bằng dấu phẩy).
+- `ADMIN_EMAIL` — email admin duy nhất được phép (vẫn dùng khi `ADMIN_AUTH_MODE=password` cho identity/session).
+- `ADMIN_AUTH_MODE` — `cloudflare_access` (mặc định) hoặc `password`.
+- **Cloudflare Access** (`ADMIN_AUTH_MODE=cloudflare_access`): `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUDS` — từ Zero Trust (hai Access applications cho `/admin*` và `/api/admin*`, Audience tags phân tách bằng dấu phẩy).
+- **Password** (`ADMIN_AUTH_MODE=password`): `ADMIN_USERNAME`, `ADMIN_PASSWORD` (≥ 8 ký tự). Yếu hơn Access nhiều — chỉ dùng khi chưa có custom domain Cloudflare; form login tại `/admin`.
 - `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` — API token R2 quyền tối thiểu trên 2 bucket.
 - `R2_PRIVATE_BUCKET`, `R2_PUBLIC_BUCKET`, `R2_PUBLIC_BASE_URL` — bucket private (JSON) + bucket public (ảnh) + custom domain của bucket public.
-- `UPLOAD_TOKEN_SECRET` — chuỗi ngẫu nhiên ≥ 32 ký tự.
+- `UPLOAD_TOKEN_SECRET` — chuỗi ngẫu nhiên ≥ 32 ký tự (cũng dùng ký session cookie khi password mode).
 
 Khi dev local, `DEV_ADMIN_BYPASS=true` (đặt trong `.env.development.local`, chỉ được load khi `next dev`) cho phép vào `/admin` không cần Cloudflare Access. **Chỉ hoạt động với `NODE_ENV=development`** — build sẽ fail nếu biến này là `true` trong môi trường build/Preview/Production.
 
