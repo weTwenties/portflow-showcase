@@ -25,13 +25,14 @@ export function isValidSlug(value: string): boolean {
 }
 
 /**
- * Derives a URL slug from a display name. The slug is generated once at
- * project creation and stays stable afterwards, even if the name changes.
+ * Derives a URL slug from a display name: lowercase, spaces → "-", and
+ * Vietnamese (or any Latin) diacritics stripped (ê→e, ă/â/á→a, đ→d).
+ * Recomputed whenever the project title changes.
  */
 export function generateSlugFromName(name: string): string {
   const slug = name
     .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "") // strip combining diacritics
+    .replace(/[\u0300-\u036f]/g, "") // strip combining diacritics
     .replaceAll("đ", "d")
     .replaceAll("Đ", "d")
     .toLowerCase()

@@ -4,6 +4,7 @@ import { isAppError } from "@/lib/api/app-error";
 import { requireAdmin } from "@/modules/access/application/require-admin";
 
 import { AdminApp } from "./_components/admin-app";
+import { AdminProviders } from "./_components/admin-providers";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ function AccessDenied() {
 }
 
 type AdminPageProps = {
-  searchParams: Promise<{ project?: string | string[] }>;
+  searchParams: Promise<{ project?: string | string[]; page?: string | string[] }>;
 };
 
 export default async function AdminPage({ searchParams }: AdminPageProps) {
@@ -46,6 +47,14 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const projectParam = Array.isArray(params.project)
     ? params.project[0]
     : params.project;
+  const pageParam = Array.isArray(params.page) ? params.page[0] : params.page;
 
-  return <AdminApp initialProjectId={projectParam ?? null} />;
+  return (
+    <AdminProviders>
+      <AdminApp
+        initialProjectId={projectParam ?? null}
+        initialPage={pageParam === "home" ? "home" : null}
+      />
+    </AdminProviders>
+  );
 }

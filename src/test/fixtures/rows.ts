@@ -1,7 +1,16 @@
 import { createBlockId, createColumnId, createRowId } from "@/lib/ids/ids";
-import type { RowBlock } from "@/modules/project/domain/blocks";
+import type { RichTextBlock, RowBlock } from "@/modules/layout/domain/blocks";
+import { plainTextToRichText } from "@/modules/rich-text/domain/rich-text-document";
 
 import { makeAsset } from "./assets";
+
+export function makeRichTextBlock(text = "Hello"): RichTextBlock {
+  return {
+    id: createBlockId(),
+    type: "rich-text",
+    content: plainTextToRichText(text),
+  };
+}
 
 export function makeImageRow(
   order = 0,
@@ -25,7 +34,7 @@ export function makeTextRow(text = "Hello"): RowBlock {
   return {
     id: createRowId(),
     type: "row",
-    columns: [{ id: createColumnId(), blocks: [{ id: createBlockId(), type: "text", text }] }],
+    columns: [{ id: createColumnId(), blocks: [makeRichTextBlock(text)] }],
   };
 }
 

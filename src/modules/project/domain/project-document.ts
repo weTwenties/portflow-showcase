@@ -1,6 +1,18 @@
 import { z } from "zod";
 
-import { MAX_ROWS_PER_PROJECT, rowBlockSchema } from "./blocks";
+import {
+  contentRowBlockSchema,
+  MAX_ROWS_PER_PROJECT,
+} from "@/modules/layout/domain/blocks";
+import {
+  legacyRowBlockSchema,
+  migrateLegacyRows,
+} from "@/modules/layout/domain/legacy-blocks";
+import {
+  DEFAULT_PAGE_THEME,
+  pageThemeSchema,
+} from "@/modules/layout/domain/page-theme";
+
 import { MAX_PROJECT_NAME_LENGTH } from "./project-name";
 
 export const MAX_SUMMARY_LENGTH = 300;
@@ -13,28 +25,65 @@ const projectIdSchema = z
 export const PROJECT_STATUSES = ["draft", "published", "archived"] as const;
 
 /**
- * `title`/`normalizedTitle`/`slug` are absent for a fresh, still-untitled
- * draft (ADR-0001 §"Luồng tạo project mới") and are all set together the
- * first time an admin gives the project a title; the slug never changes
- * after that.
+ * Schema v3: rows carry rich-text blocks and the document has a page theme
+ * (ADR-0002). `title`/`normalizedTitle`/`slug` stay absent for an untitled
+ * draft and are set together whenever a title is present; the slug is always
+ * derived from the current title (rule enforced by saveProject).
+ *
+ * A plain ZodObject (no .superRefine) so releaseProjectSchema can still
+ * .omit()/.extend() it.
  */
-// A plain ZodObject (no .superRefine) so releaseProjectSchema can still
-// .omit()/.extend() it below. The "title and slug are set together" rule is
-// enforced by saveProject() — the only code path that writes this document.
 export const projectDocumentSchema = z.object({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(3),
   id: projectIdSchema,
   title: z.string().trim().min(1).max(MAX_PROJECT_NAME_LENGTH).optional(),
   normalizedTitle: z.string().min(1).optional(),
   slug: z.string().min(1).optional(),
   summary: z.string().max(MAX_SUMMARY_LENGTH),
-  rows: z.array(rowBlockSchema).max(MAX_ROWS_PER_PROJECT),
+  theme: pageThemeSchema,
+  rows: z.array(contentRowBlockSchema).max(MAX_ROWS_PER_PROJECT),
   revision: z.number().int().min(1),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
 
 export type ProjectDocument = z.infer<typeof projectDocumentSchema>;
+
+/** Schema-v2 drafts: plain text blocks, no theme. Read-only, never written. */
+const projectDocumentV2Schema = z.object({
+  schemaVersion: z.literal(2),
+  id: projectIdSchema,
+  title: z.string().trim().min(1).max(MAX_PROJECT_NAME_LENGTH).optional(),
+  normalizedTitle: z.string().min(1).optional(),
+  slug: z.string().min(1).optional(),
+  summary: z.string().max(MAX_SUMMARY_LENGTH),
+  rows: z.array(legacyRowBlockSchema).max(MAX_ROWS_PER_PROJECT),
+  revision: z.number().int().min(1),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+
+/**
+ * Parses a stored draft of any supported schema version, normalizing old
+ * versions to v3 in memory. R2 is never rewritten just because an old
+ * document was read; the next save persists v3.
+ */
+export function parseProjectDocument(raw: unknown): ProjectDocument {
+  const version = (raw as { schemaVersion?: unknown })?.schemaVersion;
+
+  if (version === 2) {
+    const v2 = projectDocumentV2Schema.parse(raw);
+    const { rows, ...rest } = v2;
+    return {
+      ...rest,
+      schemaVersion: 3,
+      theme: DEFAULT_PAGE_THEME,
+      rows: migrateLegacyRows(rows),
+    };
+  }
+
+  return projectDocumentSchema.parse(raw);
+}
 
 export const projectIndexEntrySchema = z.object({
   id: projectIdSchema,
@@ -80,7 +129,8 @@ export function nextProjectOrder(index: ProjectIndexDocument): number {
 export const saveProjectInputSchema = z.object({
   title: z.string().trim().max(MAX_PROJECT_NAME_LENGTH),
   summary: z.string().max(MAX_SUMMARY_LENGTH),
-  rows: z.array(rowBlockSchema).max(MAX_ROWS_PER_PROJECT),
+  theme: pageThemeSchema,
+  rows: z.array(contentRowBlockSchema).max(MAX_ROWS_PER_PROJECT),
   expectedRevision: z.number().int().min(1),
 });
 

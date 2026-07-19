@@ -2,7 +2,7 @@ import { privateKeys } from "@/lib/r2/keys";
 import type { ObjectStore } from "@/lib/r2/object-store";
 import type { ProjectRepository } from "@/modules/project/application/ports";
 import {
-  projectDocumentSchema,
+  parseProjectDocument,
   projectIndexDocumentSchema,
   type ProjectDocument,
   type ProjectIndexDocument,
@@ -28,7 +28,7 @@ export function createR2ProjectRepository(
         "private",
         privateKeys.projectDraft(projectId),
       );
-      return raw === null ? null : projectDocumentSchema.parse(raw);
+      return raw === null ? null : parseProjectDocument(raw);
     },
 
     async writeDraft(document: ProjectDocument): Promise<void> {

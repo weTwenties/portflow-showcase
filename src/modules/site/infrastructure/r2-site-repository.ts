@@ -2,7 +2,7 @@ import { privateKeys } from "@/lib/r2/keys";
 import type { ObjectStore } from "@/lib/r2/object-store";
 import type { SiteRepository } from "@/modules/site/application/ports";
 import {
-  siteDocumentSchema,
+  parseSiteDocument,
   type SiteDocument,
 } from "@/modules/site/domain/site-document";
 
@@ -10,7 +10,7 @@ export function createR2SiteRepository(store: ObjectStore): SiteRepository {
   return {
     async readDraft(): Promise<SiteDocument | null> {
       const raw = await store.getJson("private", privateKeys.siteDraft());
-      return raw === null ? null : siteDocumentSchema.parse(raw);
+      return raw === null ? null : parseSiteDocument(raw);
     },
 
     async writeDraft(document: SiteDocument): Promise<void> {

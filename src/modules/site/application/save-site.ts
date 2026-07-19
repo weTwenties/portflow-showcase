@@ -4,6 +4,7 @@ import { AppError } from "@/lib/api/app-error";
 import {
   createInitialSiteDocument,
   siteInputSchema,
+  validateSiteLayout,
   type SiteDocument,
 } from "@/modules/site/domain/site-document";
 
@@ -28,14 +29,21 @@ export async function saveSite(
     );
   }
 
+  const rows = parsed.rows ?? current.rows;
+  const layoutProblem = validateSiteLayout(rows);
+  if (layoutProblem) {
+    throw new AppError("VALIDATION_ERROR", layoutProblem);
+  }
+
   if (current.revision > 0) {
     await deps.sites.writeHistory(current);
   }
 
   // Built field-by-field (not spread over `current`) so clearing an
-  // optional field like the avatar actually removes it.
+  // optional field like the avatar actually removes it. `theme`/`rows`
+  // fall back to the current document when omitted from a partial update.
   const next: SiteDocument = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     title: parsed.title,
     bio: parsed.bio,
     ...(parsed.avatarAssetId === undefined
@@ -43,6 +51,8 @@ export async function saveSite(
       : { avatarAssetId: parsed.avatarAssetId }),
     font: parsed.font,
     socialLinks: parsed.socialLinks,
+    theme: parsed.theme ?? current.theme,
+    rows,
     revision: current.revision + 1,
     updatedAt: new Date().toISOString(),
   };

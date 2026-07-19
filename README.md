@@ -2,7 +2,9 @@
 
 Website portfolio tối giản cho một designer/team nhỏ: một portfolio, một admin, không database. Toàn bộ JSON và ảnh nằm trên Cloudflare R2, đăng nhập admin qua Cloudflare Access, deploy trên Vercel.
 
-Tài liệu kiến trúc đầy đủ: [ARD-portflow-showcase.md](./ARD-portflow-showcase.md).
+**Người dùng admin:** xem [TUTORIAL.md](./TUTORIAL.md) — cách chỉnh homepage, project, autosave và publish.
+
+**Kiến trúc / ADR:** [ARD-portflow-showcase.md](./ADR/ARD-portflow-showcase.md), [ADR-0001](./ADR/ADR-0001-block-based-project-canvas.md), [ADR-0002](./ADR/ADR-0002-rich-text-theme-root-editor.md).
 
 ## Surface
 
@@ -11,6 +13,8 @@ Tài liệu kiến trúc đầy đủ: [ARD-portflow-showcase.md](./ARD-portflow
 | `/` | Portfolio public (release đã publish) |
 | `/{projectSlug}` | Chi tiết project đã publish |
 | `/admin` | Trang quản trị duy nhất (Cloudflare Access + JWT verification) |
+| `/admin?page=home` | Edit homepage (setup + layout) |
+| `/admin?project={id}` | Edit project |
 | `/api/admin/*` | Write API, bắt buộc `requireAdmin()` |
 
 ## Local development
@@ -45,10 +49,14 @@ pnpm check        # lint + typecheck + test + build
 
 ## Kiến trúc nhanh
 
-- `src/modules/{site,project,asset,publishing,access}` — DDD-lite: `domain` (schema Zod, invariant), `application` (use case + port), `infrastructure` (R2/Cloudflare adapter), `presentation` (React).
+- `src/modules/{site,project,asset,publishing,access,layout,rich-text}` — DDD-lite: `domain` (schema Zod, invariant), `application` (use case + port), `infrastructure` (R2/Cloudflare adapter), `presentation` (React).
+- **Nội dung dạng block** (ADR-0001/0002): project và trang chủ đều là `rows[] → columns[] → blocks[]` (image, rich-text; trang chủ thêm 2 system block `profile` + `project-grid`). Editor full-page tại `/admin?project={id}` và `/admin?page=home`, autosave debounce + revision check. Hướng dẫn thao tác UI: [TUTORIAL.md](./TUTORIAL.md).
+- **Rich text** lưu dạng Tiptap/ProseMirror JSON (không HTML) — paragraph/heading/list + bold/italic/underline + font size/family allowlist; server validate bằng Zod; public render qua static renderer, không bundle editor.
+- **Theme**: mỗi project/trang chủ có `{backgroundColor, textColor}` dạng `#RRGGBB`; contrast thấp chỉ cảnh báo.
+- **Schema versions**: project draft v3, site draft v2, release project v3, release site v2. Bản cũ (project/release-project v2, site/release-site v1) được normalize khi đọc — không rewrite R2, release cũ bất biến. Chi tiết migration: [ADR-0002](./ADR/ADR-0002-rich-text-theme-root-editor.md).
 - `src/lib` — env (Zod, server-only), R2 ObjectStore + key builder, API error contract, rate limit, logger.
 - `src/stores` — Zustand: `upload-store` (queue upload, concurrency 3), `admin-ui-store`.
-- Nội dung: draft → (Save, revision check) → R2 private; Publish tạo release snapshot bất biến, ghi `content/current.json` sau cùng — publish fail không ảnh hưởng release đang chạy.
+- Nội dung: draft → (autosave, revision check) → R2 private; Publish tạo release snapshot bất biến, ghi `content/current.json` sau cùng — publish fail không ảnh hưởng release đang chạy.
 - Upload: warm-up (presigned PUT 90s + finalize token) → browser PUT thẳng lên R2 staging → complete (verify checksum/size, copy sang public bucket, idempotent).
 
 ## Deploy (tóm tắt — chi tiết xem ARD §27)

@@ -1,5 +1,6 @@
 import { createProjectId } from "@/lib/ids/ids";
 import { AppError } from "@/lib/api/app-error";
+import { DEFAULT_PAGE_THEME } from "@/modules/layout/domain/page-theme";
 import {
   createInitialProjectIndex,
   MAX_PROJECTS,
@@ -33,7 +34,7 @@ export function toIndexEntry(
 /**
  * Creates an empty draft: no title, no slug, no rows. The admin lands
  * directly on the canvas (ADR-0001) and only picks a title (which then
- * generates the slug once) when they're ready.
+ * generates the slug from the name) when they're ready.
  */
 export async function createProject(deps: {
   projects: ProjectRepository;
@@ -50,9 +51,10 @@ export async function createProject(deps: {
 
   const now = new Date().toISOString();
   const project: ProjectDocument = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id: createProjectId(),
     summary: "",
+    theme: DEFAULT_PAGE_THEME,
     rows: [],
     revision: 1,
     createdAt: now,

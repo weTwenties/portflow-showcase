@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { DEFAULT_PAGE_THEME } from "@/modules/layout/domain/page-theme";
 import { createProject } from "@/modules/project/application/create-project";
 import { reorderProjects } from "@/modules/project/application/reorder-projects";
 import { saveProject } from "@/modules/project/application/save-project";
@@ -36,6 +37,7 @@ async function seedContent(deps: ReturnType<typeof setup>["deps"]) {
       bio: "Design studio",
       font: "inter",
       socialLinks: [],
+      theme: DEFAULT_PAGE_THEME,
       expectedRevision: 0,
     },
   );
@@ -48,6 +50,7 @@ async function seedContent(deps: ReturnType<typeof setup>["deps"]) {
       title: "Brand Identity",
       summary: "Logos",
       rows: [makeImageRow(0), makeImageRow(1)],
+      theme: DEFAULT_PAGE_THEME,
       expectedRevision: draft.revision,
     },
   );
@@ -153,6 +156,7 @@ describe("publishRelease", () => {
         title: "Second Project",
         summary: "",
         rows: [],
+        theme: DEFAULT_PAGE_THEME,
         expectedRevision: secondDraft.revision,
       },
     );

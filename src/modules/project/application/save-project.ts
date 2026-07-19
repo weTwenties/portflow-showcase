@@ -4,7 +4,7 @@ import {
   collectImageAssets,
   firstImageBlock,
   MAX_IMAGE_BLOCKS_PER_PROJECT,
-} from "@/modules/project/domain/blocks";
+} from "@/modules/layout/domain/blocks";
 import {
   createInitialProjectIndex,
   saveProjectInputSchema,
@@ -70,34 +70,21 @@ export async function saveProject(
 
   const trimmedTitle = parsed.title.trim();
 
-  // title/normalizedTitle/slug: absent while the project stays untitled; set
-  // together the first time a title is entered; the slug never regenerates
-  // after that (ARD §7.2 — stable slug), and title can no longer be cleared
-  // back to empty once the project has a public URL.
+  // title/normalizedTitle/slug: absent while untitled; set together whenever
+  // a title is present. Slug is always derived from the current title
+  // (lowercase, spaces → "-", Vietnamese diacritics stripped). Once a
+  // project has a public URL, the title can no longer be cleared.
   let titleFields: Pick<ProjectDocument, "title" | "normalizedTitle" | "slug"> =
     {};
 
-  if (current.slug !== undefined) {
-    if (trimmedTitle.length === 0) {
+  if (trimmedTitle.length === 0) {
+    if (current.slug !== undefined) {
       throw new AppError(
         "VALIDATION_ERROR",
         "Title cannot be cleared once the project has a public URL",
       );
     }
-    const normalizedTitle = normalizeProjectName(trimmedTitle);
-    if (
-      index.projects.some(
-        (p) => p.id !== projectId && p.normalizedTitle === normalizedTitle,
-      )
-    ) {
-      throw new AppError(
-        "PROJECT_NAME_CONFLICT",
-        "A project with this name already exists",
-        { normalizedTitle },
-      );
-    }
-    titleFields = { title: trimmedTitle, normalizedTitle, slug: current.slug };
-  } else if (trimmedTitle.length > 0) {
+  } else {
     const normalizedTitle = normalizeProjectName(trimmedTitle);
     if (
       index.projects.some(
@@ -111,7 +98,10 @@ export async function saveProject(
       );
     }
     const slug = generateSlugFromName(trimmedTitle);
-    if (!isValidSlug(slug) || index.projects.some((p) => p.slug === slug)) {
+    if (
+      !isValidSlug(slug) ||
+      index.projects.some((p) => p.id !== projectId && p.slug === slug)
+    ) {
       throw new AppError(
         "PROJECT_SLUG_CONFLICT",
         "This title produces a URL that is already taken",
@@ -128,6 +118,7 @@ export async function saveProject(
     ...current,
     ...titleFields,
     summary: parsed.summary,
+    theme: parsed.theme,
     rows: parsed.rows,
     revision: current.revision + 1,
     updatedAt: now,

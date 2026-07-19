@@ -1,23 +1,31 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
+import { FullscreenLoading } from "@/components/fullscreen-loading";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ApiClientError, apiFetch, withResourceLock } from "@/lib/api/client";
+import { ApiClientError, apiFetch } from "@/lib/api/client";
 import type { ProjectResponse, PublishResponse } from "@/lib/api/contracts";
+import type { RowBlock } from "@/modules/layout/domain/blocks";
+import {
+  pageThemeStyle,
+  type PageTheme,
+} from "@/modules/layout/domain/page-theme";
+import { RowsCanvas } from "@/modules/layout/presentation/rows-canvas";
+import { RowsView } from "@/modules/layout/presentation/rows-view";
+import { ThemeControls } from "@/modules/layout/presentation/theme-controls";
+import { useAutosaveFeedback } from "@/modules/layout/presentation/use-autosave-feedback";
+import { useDocumentAutosave } from "@/modules/layout/presentation/use-document-autosave";
 import { MAX_SUMMARY_LENGTH } from "@/modules/project/domain/project-document";
 import type { ProjectDocument } from "@/modules/project/domain/project-document";
 import { MAX_PROJECT_NAME_LENGTH } from "@/modules/project/domain/project-name";
-import { RowsCanvas, RowsView } from "@/modules/project/presentation/rows-renderer";
-import type { RowBlock } from "@/modules/project/domain/blocks";
-import { useAdminUiStore } from "@/stores/admin-ui-store";
-
-const AUTOSAVE_DELAY_MS = 1_200;
 
 type EditableState = {
   title: string;
   summary: string;
+  theme: PageTheme;
   rows: RowBlock[];
 };
 
@@ -25,11 +33,26 @@ function toEditableState(project: ProjectDocument): EditableState {
   return {
     title: project.title ?? "",
     summary: project.summary,
+    theme: project.theme,
     rows: project.rows,
   };
 }
 
-type SaveStatus = "saved" | "pending" | "saving" | "error";
+function mapSaveError(error: unknown): string {
+  if (error instanceof ApiClientError) {
+    if (error.code === "REVISION_CONFLICT") {
+      return "This project was changed elsewhere. Reload the page to continue.";
+    }
+    if (error.code === "PROJECT_NAME_CONFLICT") {
+      return "A project with this title already exists.";
+    }
+    if (error.code === "PROJECT_SLUG_CONFLICT") {
+      return "This title produces a URL that is already taken. Try another title.";
+    }
+    return error.message;
+  }
+  return error instanceof Error ? error.message : "Autosave failed";
+}
 
 export function ProjectCanvas({
   projectId,
@@ -43,18 +66,41 @@ export function ProjectCanvas({
   const [project, setProject] = useState<ProjectDocument | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [state, setState] = useState<EditableState | null>(null);
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleteBusy, setIsDeleteBusy] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
-  const [publishMessage, setPublishMessage] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
-  const setDirty = useAdminUiStore((s) => s.setDirty);
 
   const revisionRef = useRef<number | null>(null);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const savedSnapshotRef = useRef<string | null>(null);
+
+  const autosave = useDocumentAutosave<EditableState>({
+    resourceId: projectId,
+    mapError: mapSaveError,
+    save: async (next) => {
+      if (revisionRef.current === null) {
+        return;
+      }
+      const response = await apiFetch<ProjectResponse>(
+        `/api/admin/projects/${projectId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            title: next.title,
+            summary: next.summary,
+            theme: next.theme,
+            rows: next.rows,
+            expectedRevision: revisionRef.current,
+          }),
+        },
+      );
+      setProject(response.project);
+      revisionRef.current = response.project.revision;
+      onChanged();
+    },
+  });
+  const { markBaseline } = autosave;
+  useAutosaveFeedback(autosave.status, autosave.errorMessage);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,7 +111,7 @@ export function ProjectCanvas({
         revisionRef.current = response.project.revision;
         const initial = toEditableState(response.project);
         setState(initial);
-        savedSnapshotRef.current = JSON.stringify(initial);
+        markBaseline(initial);
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -77,89 +123,13 @@ export function ProjectCanvas({
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
-
-  useEffect(() => {
-    return () => setDirty(projectId, false);
-  }, [projectId, setDirty]);
-
-  useEffect(() => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
-  }, [projectId]);
-
-  function scheduleAutosave(next: EditableState) {
-    setDirty(projectId, true);
-    setSaveStatus("pending");
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-    }
-    saveTimerRef.current = setTimeout(() => {
-      void runSave(next);
-    }, AUTOSAVE_DELAY_MS);
-  }
-
-  async function runSave(next: EditableState) {
-    if (revisionRef.current === null) return;
-    const snapshot = JSON.stringify(next);
-    if (snapshot === savedSnapshotRef.current) {
-      setSaveStatus("saved");
-      return;
-    }
-
-    setSaveStatus("saving");
-    setSaveError(null);
-    try {
-      const response = await withResourceLock(projectId, () =>
-        apiFetch<ProjectResponse>(`/api/admin/projects/${projectId}`, {
-          method: "PUT",
-          body: JSON.stringify({
-            title: next.title,
-            summary: next.summary,
-            rows: next.rows,
-            expectedRevision: revisionRef.current,
-          }),
-        }),
-      );
-      setProject(response.project);
-      revisionRef.current = response.project.revision;
-      savedSnapshotRef.current = snapshot;
-      setSaveStatus("saved");
-      setDirty(projectId, false);
-      onChanged();
-    } catch (error) {
-      setSaveStatus("error");
-      if (error instanceof ApiClientError && error.code === "REVISION_CONFLICT") {
-        setSaveError(
-          "This project was changed elsewhere. Reload the page to continue.",
-        );
-      } else if (
-        error instanceof ApiClientError &&
-        error.code === "PROJECT_NAME_CONFLICT"
-      ) {
-        setSaveError("A project with this title already exists.");
-      } else if (
-        error instanceof ApiClientError &&
-        error.code === "PROJECT_SLUG_CONFLICT"
-      ) {
-        setSaveError(
-          "This title produces a URL that is already taken. Try another title.",
-        );
-      } else {
-        setSaveError(
-          error instanceof Error ? error.message : "Autosave failed",
-        );
-      }
-    }
-  }
+  }, [projectId, markBaseline]);
 
   function patch(partial: Partial<EditableState>) {
     setState((current) => {
       if (!current) return current;
       const next = { ...current, ...partial };
-      scheduleAutosave(next);
+      autosave.schedule(next);
       return next;
     });
   }
@@ -168,28 +138,31 @@ export function ProjectCanvas({
     if (!project) return;
     const requiredText = project.title ?? "";
     if (requiredText && deleteConfirmation !== requiredText) return;
+    setIsDeleteBusy(true);
     try {
       await apiFetch(`/api/admin/projects/${projectId}`, { method: "DELETE" });
+      toast.success("Project archived");
       onChanged();
       onBack();
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "Delete failed");
+      toast.error(error instanceof Error ? error.message : "Delete failed");
       setIsDeleting(false);
+    } finally {
+      setIsDeleteBusy(false);
     }
   }
 
   async function handlePublish() {
     setIsPublishing(true);
-    setPublishMessage(null);
     try {
       const result = await apiFetch<PublishResponse>("/api/admin/publish", {
         method: "POST",
       });
-      setPublishMessage(`Published (${result.projectCount} projects live).`);
+      toast.success(`Published (${result.projectCount} projects live).`);
       onChanged();
     } catch (error) {
-      setPublishMessage(
-        error instanceof Error ? `Publish failed: ${error.message}` : "Publish failed",
+      toast.error(
+        error instanceof Error ? error.message : "Publish failed",
       );
     } finally {
       setIsPublishing(false);
@@ -211,8 +184,17 @@ export function ProjectCanvas({
     return <div className="p-6 text-sm text-muted-foreground">Loading project…</div>;
   }
 
+  const isBlocking = isPublishing || isDeleteBusy;
+  const blockingLabel = isPublishing
+    ? "Publishing…"
+    : isDeleteBusy
+      ? "Deleting…"
+      : "Working…";
+
   return (
     <div className="flex min-h-screen flex-col">
+      <FullscreenLoading show={isBlocking} label={blockingLabel} />
+
       <header className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b border-border bg-background px-4 py-3">
         <Button type="button" variant="ghost" size="sm" onClick={onBack}>
           ← Back
@@ -224,19 +206,14 @@ export function ProjectCanvas({
           onChange={(event) => patch({ title: event.target.value })}
           className="max-w-xs font-medium"
         />
-        <span className="text-xs text-muted-foreground">
-          {saveStatus === "saving"
-            ? "Saving…"
-            : saveStatus === "pending"
-              ? "Unsaved changes"
-              : saveStatus === "error"
-                ? "Save failed"
-                : "Saved"}
-        </span>
         {project.slug ? (
           <span className="text-xs text-muted-foreground">/{project.slug}</span>
         ) : null}
         <div className="ml-auto flex items-center gap-2">
+          <ThemeControls
+            theme={state.theme}
+            onChange={(theme) => patch({ theme })}
+          />
           <Button
             type="button"
             variant="outline"
@@ -245,18 +222,16 @@ export function ProjectCanvas({
           >
             {isPreviewing ? "Edit" : "Preview"}
           </Button>
-          <Button type="button" size="sm" onClick={handlePublish} disabled={isPublishing}>
-            {isPublishing ? "Publishing…" : "Publish"}
+          <Button
+            type="button"
+            size="sm"
+            onClick={handlePublish}
+            disabled={isBlocking}
+          >
+            Publish
           </Button>
         </div>
       </header>
-
-      {saveError ? (
-        <p className="px-4 pt-2 text-sm text-destructive">{saveError}</p>
-      ) : null}
-      {publishMessage ? (
-        <p className="px-4 pt-2 text-sm text-muted-foreground">{publishMessage}</p>
-      ) : null}
 
       <div className="flex flex-1 flex-col gap-4 px-4 py-4">
         <Input
@@ -267,15 +242,23 @@ export function ProjectCanvas({
         />
 
         {isPreviewing ? (
-          <div className="rounded-xl border border-border bg-white p-6">
+          <div
+            className="rounded-xl border border-border p-6"
+            style={pageThemeStyle(state.theme)}
+          >
             <RowsView rows={state.rows} />
           </div>
         ) : (
-          <RowsCanvas
-            rows={state.rows}
-            projectId={projectId}
-            onRowsChange={(rows) => patch({ rows })}
-          />
+          <div
+            className="mx-auto w-5xl rounded-xl border border-border p-3"
+            style={pageThemeStyle(state.theme)}
+          >
+            <RowsCanvas
+              rows={state.rows}
+              scopeId={projectId}
+              onRowsChange={(rows) => patch({ rows })}
+            />
+          </div>
         )}
       </div>
 
@@ -283,11 +266,14 @@ export function ProjectCanvas({
         {isDeleting ? (
           <div className="flex flex-col gap-2">
             <p className="text-sm text-muted-foreground">
-              {project.title
-                ? (
-                  <>Type <span className="font-medium">{project.title}</span> to confirm.</>
-                )
-                : "Confirm deleting this untitled draft."}{" "}
+              {project.title ? (
+                <>
+                  Type <span className="font-medium">{project.title}</span> to
+                  confirm.
+                </>
+              ) : (
+                "Confirm deleting this untitled draft."
+              )}{" "}
               The project is archived and disappears from the site on the next
               publish.
             </p>
@@ -302,18 +288,31 @@ export function ProjectCanvas({
               <Button
                 type="button"
                 variant="destructive"
-                disabled={Boolean(project.title) && deleteConfirmation !== project.title}
+                disabled={
+                  isBlocking ||
+                  (Boolean(project.title) &&
+                    deleteConfirmation !== project.title)
+                }
                 onClick={handleDelete}
               >
                 Delete
               </Button>
-              <Button type="button" variant="ghost" onClick={() => setIsDeleting(false)}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setIsDeleting(false)}
+              >
                 Cancel
               </Button>
             </div>
           </div>
         ) : (
-          <Button type="button" variant="destructive" size="sm" onClick={() => setIsDeleting(true)}>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={() => setIsDeleting(true)}
+          >
             Delete project…
           </Button>
         )}

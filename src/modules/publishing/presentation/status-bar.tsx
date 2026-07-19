@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 
+import { FullscreenLoading } from "@/components/fullscreen-loading";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api/client";
 import type { PublishResponse } from "@/lib/api/contracts";
@@ -22,23 +24,21 @@ export function StatusBar({
 }) {
   const hasUnsavedChanges = useAdminUiStore(selectHasUnsavedChanges);
   const [isPublishing, setIsPublishing] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
 
   async function handlePublish() {
     setIsPublishing(true);
-    setMessage(null);
     try {
       const result = await apiFetch<PublishResponse>("/api/admin/publish", {
         method: "POST",
       });
-      setMessage(
+      toast.success(
         `Published release ${result.releaseId} (${result.projectCount} projects).`,
       );
       onPublished();
     } catch (error) {
-      setMessage(
+      toast.error(
         error instanceof Error
-          ? `Publish failed: ${error.message}. The previous release is still live.`
+          ? `${error.message}. The previous release is still live.`
           : "Publish failed. The previous release is still live.",
       );
     } finally {
@@ -48,6 +48,8 @@ export function StatusBar({
 
   return (
     <section className="flex flex-col gap-2 rounded-xl border border-border p-4">
+      <FullscreenLoading show={isPublishing} label="Publishing…" />
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm">
           {currentRelease ? (
@@ -87,11 +89,10 @@ export function StatusBar({
             onClick={handlePublish}
             disabled={isPublishing}
           >
-            {isPublishing ? "Publishing…" : "Publish"}
+            Publish
           </Button>
         </div>
       </div>
-      {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
     </section>
   );
 }

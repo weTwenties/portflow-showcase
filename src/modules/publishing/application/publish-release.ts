@@ -4,17 +4,18 @@ import { logServerEvent } from "@/lib/observability/logger";
 import { publicAssetUrl } from "@/modules/asset/domain/asset";
 import { assertAssetsBelongToPublicBase } from "@/modules/project/application/save-project";
 import type { ProjectRepository } from "@/modules/project/application/ports";
-import { collectImageAssets, firstImageBlock } from "@/modules/project/domain/blocks";
+import { collectImageAssets, firstImageBlock } from "@/modules/layout/domain/blocks";
 import {
   createInitialProjectIndex,
-  projectDocumentSchema,
+  parseProjectDocument,
   type ProjectDocument,
   type ProjectIndexEntry,
 } from "@/modules/project/domain/project-document";
 import type { SiteRepository } from "@/modules/site/application/ports";
 import {
   createInitialSiteDocument,
-  siteDocumentSchema,
+  parseSiteDocument,
+  validateSiteLayout,
 } from "@/modules/site/domain/site-document";
 import type {
   ReleaseManifest,
@@ -70,9 +71,15 @@ export async function publishRelease(deps: {
   releases: ReleaseRepository;
   assetBaseUrl: string;
 }): Promise<PublishResult> {
-  const site = siteDocumentSchema.parse(
+  const site = parseSiteDocument(
     (await deps.sites.readDraft()) ?? createInitialSiteDocument(),
   );
+
+  const layoutProblem = validateSiteLayout(site.rows);
+  if (layoutProblem) {
+    throw new AppError("VALIDATION_ERROR", layoutProblem);
+  }
+
   const index =
     (await deps.projects.readIndex()) ?? createInitialProjectIndex();
 
@@ -92,7 +99,7 @@ export async function publishRelease(deps: {
         { projectId: entry.id },
       );
     }
-    const parsed = projectDocumentSchema.parse(draft);
+    const parsed = parseProjectDocument(draft);
     if (!isTitled(parsed)) {
       throw new AppError(
         "VALIDATION_ERROR",
@@ -134,6 +141,7 @@ export async function publishRelease(deps: {
       title: document.title,
       slug: document.slug,
       summary: document.summary,
+      theme: document.theme,
       rows: document.rows,
       createdAt: document.createdAt,
       updatedAt: document.updatedAt,
@@ -146,6 +154,8 @@ export async function publishRelease(deps: {
     bio: site.bio,
     font: site.font,
     socialLinks: site.socialLinks,
+    theme: site.theme,
+    rows: site.rows,
     updatedAt: site.updatedAt,
     ...(site.avatarAssetId === undefined
       ? {}

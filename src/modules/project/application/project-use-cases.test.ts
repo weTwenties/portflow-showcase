@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { AppError } from "@/lib/api/app-error";
+import { DEFAULT_PAGE_THEME } from "@/modules/layout/domain/page-theme";
 import type { ProjectRepository } from "@/modules/project/application/ports";
 import { createR2ProjectRepository } from "@/modules/project/infrastructure/r2-project-repository";
 import { FakeObjectStore } from "@/test/fakes/fake-object-store";
@@ -38,6 +39,7 @@ async function createTitledProject(
     title,
     summary: overrides.summary ?? "",
     rows: overrides.rows ?? [],
+    theme: DEFAULT_PAGE_THEME,
     expectedRevision: draft.revision,
   });
 }
@@ -83,7 +85,7 @@ describe("createProject", () => {
 });
 
 describe("saveProject", () => {
-  it("titles an untitled draft, generating a normalized title and stable slug", async () => {
+  it("titles an untitled draft, generating a normalized title and slug", async () => {
     const { projects } = setup();
 
     const saved = await createTitledProject(projects, "Brand Identity");
@@ -97,7 +99,7 @@ describe("saveProject", () => {
     expect(index?.projects.at(0)?.slug).toBe("brand-identity");
   });
 
-  it("keeps the slug stable when the title changes later", async () => {
+  it("regenerates the slug when the title changes later", async () => {
     const { projects } = setup();
     const titled = await createTitledProject(projects, "Brand Identity");
 
@@ -108,12 +110,37 @@ describe("saveProject", () => {
         title: "Brand Identity 2024",
         summary: "Refreshed",
         rows: [],
+        theme: DEFAULT_PAGE_THEME,
         expectedRevision: titled.revision,
       },
     );
 
-    expect(renamed.slug).toBe("brand-identity");
+    expect(renamed.slug).toBe("brand-identity-2024");
     expect(renamed.title).toBe("Brand Identity 2024");
+
+    const index = await projects.readIndex();
+    expect(index?.projects.find((p) => p.id === titled.id)?.slug).toBe(
+      "brand-identity-2024",
+    );
+  });
+
+  it("slugifies Vietnamese titles when renaming", async () => {
+    const { projects } = setup();
+    const titled = await createTitledProject(projects, "Du An");
+
+    const renamed = await saveProject(
+      { projects, assetBaseUrl: TEST_ASSET_BASE_URL },
+      titled.id,
+      {
+        title: "Dự án Đặc biệt",
+        summary: "",
+        rows: [],
+        theme: DEFAULT_PAGE_THEME,
+        expectedRevision: titled.revision,
+      },
+    );
+
+    expect(renamed.slug).toBe("du-an-dac-biet");
   });
 
   it("rejects clearing the title once the project has a public URL", async () => {
@@ -125,6 +152,7 @@ describe("saveProject", () => {
         title: "",
         summary: "",
         rows: [],
+        theme: DEFAULT_PAGE_THEME,
         expectedRevision: titled.revision,
       }),
       "VALIDATION_ERROR",
@@ -138,7 +166,13 @@ describe("saveProject", () => {
     const saved = await saveProject(
       { projects, assetBaseUrl: TEST_ASSET_BASE_URL },
       draft.id,
-      { title: "", summary: "Still deciding", rows: [], expectedRevision: draft.revision },
+      {
+        title: "",
+        summary: "Still deciding",
+        rows: [],
+        theme: DEFAULT_PAGE_THEME,
+        expectedRevision: draft.revision,
+      },
     );
 
     expect(saved.title).toBeUndefined();
@@ -156,6 +190,7 @@ describe("saveProject", () => {
         title: " BRAND   identity ",
         summary: "",
         rows: [],
+        theme: DEFAULT_PAGE_THEME,
         expectedRevision: other.revision,
       }),
       "PROJECT_NAME_CONFLICT",
@@ -173,6 +208,7 @@ describe("saveProject", () => {
         title: "Café",
         summary: "",
         rows: [],
+        theme: DEFAULT_PAGE_THEME,
         expectedRevision: other.revision,
       }),
       "PROJECT_SLUG_CONFLICT",
@@ -192,7 +228,13 @@ describe("saveProject", () => {
     const saved = await saveProject(
       { projects, assetBaseUrl: TEST_ASSET_BASE_URL },
       draft.id,
-      { title: "Brand Identity", summary: "Logos", rows, expectedRevision: draft.revision },
+      {
+        title: "Brand Identity",
+        summary: "Logos",
+        rows,
+        theme: DEFAULT_PAGE_THEME,
+        expectedRevision: draft.revision,
+      },
     );
 
     expect(saved.rows).toHaveLength(2);
@@ -212,6 +254,7 @@ describe("saveProject", () => {
         title: "Brand",
         summary: "",
         rows: [],
+        theme: DEFAULT_PAGE_THEME,
         expectedRevision: 99,
       }),
       "REVISION_CONFLICT",
@@ -230,6 +273,7 @@ describe("saveProject", () => {
         title: "Brand",
         summary: "",
         rows: [evilRow],
+        theme: DEFAULT_PAGE_THEME,
         expectedRevision: draft.revision,
       }),
       "INVALID_ASSET",
@@ -243,7 +287,13 @@ describe("saveProject", () => {
       saveProject(
         { projects, assetBaseUrl: TEST_ASSET_BASE_URL },
         `project_${"0".repeat(32)}`,
-        { title: "Ghost", summary: "", rows: [], expectedRevision: 1 },
+        {
+          title: "Ghost",
+          summary: "",
+          rows: [],
+          theme: DEFAULT_PAGE_THEME,
+          expectedRevision: 1,
+        },
       ),
       "PROJECT_NOT_FOUND",
     );

@@ -9,6 +9,7 @@ describe("generateSlugFromName", () => {
 
   it("strips Vietnamese diacritics including đ", () => {
     expect(generateSlugFromName("Dự án Đặc biệt")).toBe("du-an-dac-biet");
+    expect(generateSlugFromName("Ê Ă Â Á À")).toBe("e-a-a-a-a");
   });
 
   it("collapses punctuation and trims hyphens", () => {

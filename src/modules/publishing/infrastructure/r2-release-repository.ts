@@ -3,9 +3,9 @@ import type { ObjectStore } from "@/lib/r2/object-store";
 import type { ReleaseRepository } from "@/modules/publishing/application/ports";
 import {
   currentPointerSchema,
+  parseReleaseProject,
+  parseReleaseSite,
   releaseManifestSchema,
-  releaseProjectSchema,
-  releaseSiteSchema,
   type CurrentPointer,
   type ReleaseManifest,
   type ReleaseProject,
@@ -71,7 +71,7 @@ export function createR2ReleaseRepository(
         "private",
         privateKeys.releaseSite(releaseId),
       );
-      return raw === null ? null : releaseSiteSchema.parse(raw);
+      return raw === null ? null : parseReleaseSite(raw);
     },
 
     async readProject(
@@ -82,7 +82,7 @@ export function createR2ReleaseRepository(
         "private",
         privateKeys.releaseProject(releaseId, slug),
       );
-      return raw === null ? null : releaseProjectSchema.parse(raw);
+      return raw === null ? null : parseReleaseProject(raw);
     },
   };
 }
